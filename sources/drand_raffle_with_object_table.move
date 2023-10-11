@@ -1,4 +1,9 @@
-module raffle::raffle {
+// Copyright (c) Mysten Labs, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
+/// Example of objects that can be combined to create
+/// new objects
+module raffle::drand_raffle_with_object_table {
     use sui::clock::{Self, Clock};
     use raffle::drand_lib::{derive_randomness, verify_drand_signature, safe_selection, get_current_round_by_time};
     use sui::balance::{Self, Balance};
@@ -11,8 +16,26 @@ module raffle::raffle {
     use sui::transfer;
     use sui::tx_context::{Self, TxContext};
     use std::vector;
+    use raffle::addresses_obj::{Self, AddressesObj};
+    use raffle::addresses_sub_obj::{Self, AddressesSubObj};
+    use sui::object_table::{Self, ObjectTable};
     
 
+    struct TimeEvent has copy, drop, store { 
+        timestamp_ms: u64,
+        expect_current_round: u64,
+        round_will_use: u64,
+    }
+
+    entry fun get_drandlib_round(clock: &Clock) {
+        let expect_current_round = get_current_round_by_time(clock::timestamp_ms(clock));
+        let round_will_use = expect_current_round + 2;
+        event::emit(TimeEvent {
+            timestamp_ms: clock::timestamp_ms(clock),
+            expect_current_round: expect_current_round,
+            round_will_use: round_will_use,
+        });
+    }
     
     struct CoinRaffleCreated has copy, drop {
         raffle_id: ID,
@@ -20,6 +43,7 @@ module raffle::raffle {
         creator: address,
         round: u64,
         participants_count: u64,
+        // participants_hash_proof: ID,
         winnerCount: u64,
         prizeAmount: u64,
         prizeType: ASCIIString,
@@ -35,6 +59,7 @@ module raffle::raffle {
             creator: raffle.creator,
             round: raffle.round,
             participants_count: vector::length(&participants),
+            // participants_hash_proof,
             winnerCount: raffle.winnerCount,
             prizeAmount: balance::value(&raffle.balance),
             prizeType: raffleType,
@@ -64,7 +89,8 @@ module raffle::raffle {
         status: u8,
         creator: address,
         settler: address,
-        participants: vector<address>,
+        addressesSubObjs_table: ObjectTable<ID, AddressesSubObj>,
+        addressesSubObjs_keys: vector<ID>,
         participantCount: u64,
         winnerCount: u64,
         winners: vector<address>,
@@ -86,18 +112,24 @@ module raffle::raffle {
         awardObject: Coin<T>, 
         ctx: &mut TxContext
     ){
-        internal_create_coin_raffle(name, clock, participants, winnerCount, awardObject, ctx);
+        let (
+            addressesSubObjs_table,
+            addressesSubObjs_keys
+        ) = addresses_sub_obj::table_keys_create(participants, ctx);
+        internal_create_coin_raffle(name, clock, addressesSubObjs_table, addressesSubObjs_keys, winnerCount, awardObject, ctx);
     }
     
 
     fun internal_create_coin_raffle<T>(
         name: vector<u8>, 
         clock: &Clock,
-        participants: vector<address>, 
+        addressesSubObjs_table: ObjectTable<ID, AddressesSubObj>,
+        addressesSubObjs_keys: vector<ID>,
         winnerCount: u64,
         awardObject: Coin<T>, 
         ctx: &mut TxContext
     ){
+        let participants = addresses_sub_obj::table_keys_get_all_addresses(&addressesSubObjs_table, &addressesSubObjs_keys);
         let participantCount = vector::length(&participants);
         assert!(winnerCount <= participantCount, 0);
         let drand_current_round = get_current_round_by_time(clock::timestamp_ms(clock));
@@ -108,7 +140,8 @@ module raffle::raffle {
             status: IN_PROGRESS,
             creator: tx_context::sender(ctx),
             settler: @0x00,
-            participants,
+            addressesSubObjs_table,
+            addressesSubObjs_keys,
             participantCount,
             winnerCount,
             winners: vector::empty(),
@@ -117,7 +150,22 @@ module raffle::raffle {
         emit_coin_raffle_created(&raffle);
         transfer::public_share_object(raffle);
     }
-    
+    public entry fun create_coin_raffle_by_addresses_obj<T, F>(
+        name: vector<u8>, 
+        clock: &Clock,
+        addressesObj: &mut AddressesObj<F>,
+        fee: Coin<F>,
+        winnerCount: u64,
+        awardObject: Coin<T>, 
+        ctx: &mut TxContext
+    ){
+        assert!(addresses_obj::getFee(addressesObj) == balance::value(coin::balance(&fee)), 0);
+        transfer::public_transfer(fee, addresses_obj::getCreator(addressesObj));
+        addresses_obj::setFee(addressesObj, 0);
+        let (addressesSubObjs_table, addressesSubObjs_keys) = addresses_obj::pop_all(addressesObj, ctx);
+        internal_create_coin_raffle(name, clock, addressesSubObjs_table, addressesSubObjs_keys, winnerCount, awardObject, ctx);
+    }
+
     public entry fun settle_coin_raffle<T>(
         raffle: &mut Raffle<T>,
         clock: &Clock,
@@ -138,7 +186,7 @@ module raffle::raffle {
         let random_number = 0;
         let i = 0;
 
-        let participants = raffle.participants;
+        let participants = getParticipants(raffle);
 
         let award_per_winner = balance::value(&raffle.balance) / raffle.winnerCount;
 
@@ -159,17 +207,21 @@ module raffle::raffle {
                 break
             }
         };
-        raffle.participants = vector::empty();
+        addresses_sub_obj::table_keys_clear(
+            &mut raffle.addressesSubObjs_table,
+            &mut raffle.addressesSubObjs_keys
+        );
         emit_coin_raffle_settled(raffle);
     }
 
+    fun getParticipants<T>(raffle: &Raffle<T>):vector<address> {
+        addresses_sub_obj::table_keys_get_all_addresses(&raffle.addressesSubObjs_table, &raffle.addressesSubObjs_keys)
+    }
+
+    // public entry fun release_raffle_participants
     fun getWinners<T>(raffle: &Raffle<T>):vector<address> {
         raffle.winners
     }
-    fun getParticipants<T>(raffle: &Raffle<T>):vector<address> {
-        raffle.participants
-    }
-
 
     #[test]
     fun test_raffle() {
@@ -275,5 +327,110 @@ module raffle::raffle {
         
         test_scenario::end(scenario_val);
     }
-    
+    #[test]
+    fun test_raffle_by_addressesObj() {
+        use raffle::test_coin::{Self, TEST_COIN};
+        use sui::test_scenario;
+        use sui::balance;
+        use std::debug;
+        // create test addresses representing users
+        let admin = @0xad;
+        let host = @0xac;
+        let user1 = @0xCAF1;
+        let user2 = @0xCAF2;
+        let user3 = @0xCAF3;
+        let user4 = @0xCAF4;
+        let user5 = @0xCAF5;
+        let user6 = @0xCAF6;
+        let user7 = @0xCAF7;
+        
+        // first transaction to emulate module initialization
+        let scenario_val = test_scenario::begin(admin);
+        let scenario = &mut scenario_val;
+        {
+            init(test_scenario::ctx(scenario));
+            // test_coin::init(test_utils::create_one_time_witness<TEST>(), test_scenario::ctx(scenario))
+        };
+
+        test_scenario::next_tx(scenario, admin);
+        {
+            let participants = vector::empty<address>();
+            vector::push_back(&mut participants, user1);
+            vector::push_back(&mut participants, user2);
+            vector::push_back(&mut participants, user3);
+            vector::push_back(&mut participants, user4);
+            vector::push_back(&mut participants, user5);
+            vector::push_back(&mut participants, user6);
+            vector::push_back(&mut participants, user7);
+            addresses_obj::create<TEST_COIN>(participants, test_scenario::ctx(scenario));
+        };
+        
+        let i = 0;
+        while(i < 100){
+            test_scenario::next_tx(scenario, admin);
+            {
+                let addressesObj = test_scenario::take_from_address<AddressesObj<TEST_COIN>>(scenario, admin);
+                let participants = vector::empty<address>();
+                vector::push_back(&mut participants, user1);
+                vector::push_back(&mut participants, user2);
+                vector::push_back(&mut participants, user3);
+                vector::push_back(&mut participants, user4);
+                vector::push_back(&mut participants, user5);
+                vector::push_back(&mut participants, user6);
+                vector::push_back(&mut participants, user7);
+                addresses_obj::add_addresses(&mut addressesObj, participants, test_scenario::ctx(scenario));
+                test_scenario::return_to_address(admin, addressesObj);
+            };
+            i = i+1;
+        };
+        test_scenario::next_tx(scenario, admin);
+        let fee = 50000;
+        {
+            let addressesObj = test_scenario::take_from_address<AddressesObj<TEST_COIN>>(scenario, admin);
+            addresses_obj::finalize(addressesObj, fee, test_scenario::ctx(scenario));            
+        };
+        
+
+        test_scenario::next_tx(scenario, host);
+        let winnerCount = 3;
+        let totalPrize = 10;
+        {
+            let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
+            let fee = coin::from_balance(balance::create_for_testing<TEST_COIN>(fee), test_scenario::ctx(scenario));
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            let addressesObj = test_scenario::take_shared<AddressesObj<TEST_COIN>>(scenario);
+            clock::set_for_testing(&mut clockObj, 1687974871000);
+            create_coin_raffle_by_addresses_obj(b"TEST", &clockObj, &mut addressesObj, fee, winnerCount, coin, test_scenario::ctx(scenario));
+            clock::destroy_for_testing(clockObj);
+            test_scenario::return_shared(addressesObj);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            let feeCoin = test_scenario::take_from_address<Coin<TEST_COIN>>(scenario, admin);
+            assert!(balance::value(coin::balance(&feeCoin)) == fee, 0);
+            test_scenario::return_to_address(admin, feeCoin);
+
+            let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            // debug::print(&raffle.participants);
+
+            assert!(raffle.round == 3084797, 0);
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            clock::set_for_testing(&mut clockObj, 1687975971000);
+            
+            settle_coin_raffle(
+                &mut raffle, 
+                &clockObj,
+                x"9443823f383e66ab072215da88087c31b129c350f9eebb0651f62da462e19b38d4a35c2f65d825304868d756ed81585016b9e847cf5c51a325e0d02519106ce1999c9292aa8b726609d792a00808dc9e9810ae76e9622e44934d14be32ef9c62",
+                x"89aa680c3cde91517dffd9f81bbb5c78baa1c3b4d76b1bfced88e7d8449ff0dc55515e09364db01d05d62bde03a7d08111f95131a7fef2a27e1c8aea8e499189214d38d27deabaf67b35821949fff73b13f0f182588fe1dc73630742bb95ba29", 
+                test_scenario::ctx(scenario)
+            );
+            clock::destroy_for_testing(clockObj);
+            let winners = getWinners(&raffle);
+            // debug::print(&winners);
+            assert!(winnerCount == vector::length(&winners), 0);
+            
+            test_scenario::return_shared(raffle);
+        };
+        test_scenario::end(scenario_val);
+    }
 }
