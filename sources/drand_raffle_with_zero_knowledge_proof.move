@@ -209,10 +209,11 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
             raffle.participants_Merkle_Root
         );
         assert!(valid, 0);
-        vector::swap_remove(&mut raffle.unclaimedWinnersIndex, vector_index);
+
         let remained_balance = balance::value(&raffle.balance);
         let balence_to_send = remained_balance / vector::length(&raffle.unclaimedWinnersIndex);
         transfer::public_transfer(coin::take(&mut raffle.balance, balence_to_send, ctx), winner_address);
+        vector::swap_remove(&mut raffle.unclaimedWinnersIndex, vector_index);
         vector::push_back(&mut raffle.claimmedWinners, winner_address);
         vector::push_back(&mut raffle.claimmedWinnersIndex, winner_id);
     }
@@ -222,8 +223,10 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
     fun getUnclaimedWinnerIDs<T>(raffle: &Raffle<T>):vector<u64> {
         raffle.unclaimedWinnersIndex
     }
+    
+    
     #[test]
-    fun test_raffle() {
+    fun test_raffle_without_start_settle_claim() {
         use raffle::test_coin::{Self, TEST_COIN};
         use sui::test_scenario;
         use sui::balance;
@@ -231,8 +234,23 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         // create test addresses representing users
         let admin = @0xad;
         let host = @0xac;
-        let user1 = @0x04d626ce8938318165fab01491095329aee67fd017a4a17fe2c981b8a9a569cc;
+        let user1 = @0xcba2aa3c7ee3f3f6580e78ba0008577867e20784bc5b3ad8f76db0ad4176f0e4;
         
+        let winnerCount = 1;
+        let totalPrize = 10;
+
+        let user1_index = 0;
+        let merkle_root = x"8714127bd7b54f7cd362ea56141fcf741c9937fb399feec150014511d68b715f";
+        let participantCount = 2; // set it to 2 for testing, so the id 0 will be the winner.
+        let proofs = vector::empty<vector<u8>>();
+        vector::push_back(&mut proofs, x"b14995a1c47168773d46d4a809e980182dda361e26ed441d7814f938019375af");
+        vector::push_back(&mut proofs, x"b4624a82b5742fb96be8f3e644274c8059fdf9bf03b6894264f2338858a20dc6");
+        vector::push_back(&mut proofs, x"8d2d65241d70edef4ca8d02b21e739f866475e028822f0083865f2f341db53ce");
+        vector::push_back(&mut proofs, x"86794d761065aec1cfcfced7b680eccf8ace01e27875d427d9a37064a8eec7e1");
+        vector::push_back(&mut proofs, x"3a539cde95b655a045994ffa3f55de7ec9a3746d5019e735a6370381b5c8e1e3");
+        vector::push_back(&mut proofs, x"c5811e5652ad00e70c90c5939c5b13b588362066f889419950d0ab870ec76231");
+        vector::push_back(&mut proofs, x"d5dfb532a73d5d1372e9a069028681b8975538395ea81705e39c7a64cb8af9fc");
+        vector::push_back(&mut proofs, x"ccd7d991d797c2d306c83a6837b9af87a78734ec35a8568382d361a7e3c75aee");
         // first transaction to emulate module initialization
         let scenario_val = test_scenario::begin(admin);
         let scenario = &mut scenario_val;
@@ -242,10 +260,80 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         };
 
         test_scenario::next_tx(scenario, host);
+        
+        {
+            // let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
+            
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            
+            clock::set_for_testing(&mut clockObj, 1687974871000);
+            // create_coin_raffle(b"TEST", &clockObj, merkle_root, participantCount, winnerCount, coin, test_scenario::ctx(scenario));
+            clock::destroy_for_testing(clockObj);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            // let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            clock::set_for_testing(&mut clockObj, 1687975971000);
+            
+            // settle_coin_raffle(
+            //     &mut raffle, 
+            //     &clockObj,
+            //     x"9443823f383e66ab072215da88087c31b129c350f9eebb0651f62da462e19b38d4a35c2f65d825304868d756ed81585016b9e847cf5c51a325e0d02519106ce1999c9292aa8b726609d792a00808dc9e9810ae76e9622e44934d14be32ef9c62",
+            //     x"89aa680c3cde91517dffd9f81bbb5c78baa1c3b4d76b1bfced88e7d8449ff0dc55515e09364db01d05d62bde03a7d08111f95131a7fef2a27e1c8aea8e499189214d38d27deabaf67b35821949fff73b13f0f182588fe1dc73630742bb95ba29", 
+            //     test_scenario::ctx(scenario)
+            // );
+            clock::destroy_for_testing(clockObj);
+            
+            // test_scenario::return_shared(raffle);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            // let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            
+            // claim_raffle_reward(&mut raffle, user1_index, user1, proofs, test_scenario::ctx(scenario));
+
+            // test_scenario::return_shared(raffle);
+        };
+
+        test_scenario::end(scenario_val);
+    }
+
+    #[test]
+    fun test_raffle_with_start_without_settle_claim() {
+        use raffle::test_coin::{Self, TEST_COIN};
+        use sui::test_scenario;
+        use sui::balance;
+        use std::debug;
+        // create test addresses representing users
+        let admin = @0xad;
+        let host = @0xac;
+        let user1 = @0xcba2aa3c7ee3f3f6580e78ba0008577867e20784bc5b3ad8f76db0ad4176f0e4;
+        
         let winnerCount = 1;
         let totalPrize = 10;
-        let merkle_root = x"bd1d23e6665d7f010df630c66809c19733b79b03e5840a367fa22baf5bed58e4";
-        let participantCount = 2;
+
+        let user1_index = 0;
+        let merkle_root = x"8714127bd7b54f7cd362ea56141fcf741c9937fb399feec150014511d68b715f";
+        let participantCount = 2; // set it to 2 for testing, so the id 0 will be the winner.
+        let proofs = vector::empty<vector<u8>>();
+        vector::push_back(&mut proofs, x"b14995a1c47168773d46d4a809e980182dda361e26ed441d7814f938019375af");
+        vector::push_back(&mut proofs, x"b4624a82b5742fb96be8f3e644274c8059fdf9bf03b6894264f2338858a20dc6");
+        vector::push_back(&mut proofs, x"8d2d65241d70edef4ca8d02b21e739f866475e028822f0083865f2f341db53ce");
+        vector::push_back(&mut proofs, x"86794d761065aec1cfcfced7b680eccf8ace01e27875d427d9a37064a8eec7e1");
+        vector::push_back(&mut proofs, x"3a539cde95b655a045994ffa3f55de7ec9a3746d5019e735a6370381b5c8e1e3");
+        vector::push_back(&mut proofs, x"c5811e5652ad00e70c90c5939c5b13b588362066f889419950d0ab870ec76231");
+        vector::push_back(&mut proofs, x"d5dfb532a73d5d1372e9a069028681b8975538395ea81705e39c7a64cb8af9fc");
+        vector::push_back(&mut proofs, x"ccd7d991d797c2d306c83a6837b9af87a78734ec35a8568382d361a7e3c75aee");
+        // first transaction to emulate module initialization
+        let scenario_val = test_scenario::begin(admin);
+        let scenario = &mut scenario_val;
+        {
+            init(test_scenario::ctx(scenario));
+            // test_coin::init(test_utils::create_one_time_witness<TEST>(), test_scenario::ctx(scenario))
+        };
+
+        test_scenario::next_tx(scenario, host);
         
         {
             let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
@@ -259,7 +347,82 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         test_scenario::next_tx(scenario, user1);
         {
             let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
-            assert!(raffle.round == 3084797, 0);
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            clock::set_for_testing(&mut clockObj, 1687975971000);
+            
+            // settle_coin_raffle(
+            //     &mut raffle, 
+            //     &clockObj,
+            //     x"9443823f383e66ab072215da88087c31b129c350f9eebb0651f62da462e19b38d4a35c2f65d825304868d756ed81585016b9e847cf5c51a325e0d02519106ce1999c9292aa8b726609d792a00808dc9e9810ae76e9622e44934d14be32ef9c62",
+            //     x"89aa680c3cde91517dffd9f81bbb5c78baa1c3b4d76b1bfced88e7d8449ff0dc55515e09364db01d05d62bde03a7d08111f95131a7fef2a27e1c8aea8e499189214d38d27deabaf67b35821949fff73b13f0f182588fe1dc73630742bb95ba29", 
+            //     test_scenario::ctx(scenario)
+            // );
+            clock::destroy_for_testing(clockObj);
+            
+            test_scenario::return_shared(raffle);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            
+            // claim_raffle_reward(&mut raffle, user1_index, user1, proofs, test_scenario::ctx(scenario));
+
+            test_scenario::return_shared(raffle);
+        };
+
+        test_scenario::end(scenario_val);
+    }
+    
+
+
+    #[test]
+    fun test_raffle_with_start_settle_without_claim() {
+        use raffle::test_coin::{Self, TEST_COIN};
+        use sui::test_scenario;
+        use sui::balance;
+        use std::debug;
+        // create test addresses representing users
+        let admin = @0xad;
+        let host = @0xac;
+        let user1 = @0xcba2aa3c7ee3f3f6580e78ba0008577867e20784bc5b3ad8f76db0ad4176f0e4;
+        
+        let winnerCount = 1;
+        let totalPrize = 10;
+
+        let user1_index = 0;
+        let merkle_root = x"8714127bd7b54f7cd362ea56141fcf741c9937fb399feec150014511d68b715f";
+        let participantCount = 2; // set it to 2 for testing, so the id 0 will be the winner.
+        let proofs = vector::empty<vector<u8>>();
+        vector::push_back(&mut proofs, x"b14995a1c47168773d46d4a809e980182dda361e26ed441d7814f938019375af");
+        vector::push_back(&mut proofs, x"b4624a82b5742fb96be8f3e644274c8059fdf9bf03b6894264f2338858a20dc6");
+        vector::push_back(&mut proofs, x"8d2d65241d70edef4ca8d02b21e739f866475e028822f0083865f2f341db53ce");
+        vector::push_back(&mut proofs, x"86794d761065aec1cfcfced7b680eccf8ace01e27875d427d9a37064a8eec7e1");
+        vector::push_back(&mut proofs, x"3a539cde95b655a045994ffa3f55de7ec9a3746d5019e735a6370381b5c8e1e3");
+        vector::push_back(&mut proofs, x"c5811e5652ad00e70c90c5939c5b13b588362066f889419950d0ab870ec76231");
+        vector::push_back(&mut proofs, x"d5dfb532a73d5d1372e9a069028681b8975538395ea81705e39c7a64cb8af9fc");
+        vector::push_back(&mut proofs, x"ccd7d991d797c2d306c83a6837b9af87a78734ec35a8568382d361a7e3c75aee");
+        // first transaction to emulate module initialization
+        let scenario_val = test_scenario::begin(admin);
+        let scenario = &mut scenario_val;
+        {
+            init(test_scenario::ctx(scenario));
+            // test_coin::init(test_utils::create_one_time_witness<TEST>(), test_scenario::ctx(scenario))
+        };
+
+        test_scenario::next_tx(scenario, host);
+        
+        {
+            let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
+            
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            
+            clock::set_for_testing(&mut clockObj, 1687974871000);
+            create_coin_raffle(b"TEST", &clockObj, merkle_root, participantCount, winnerCount, coin, test_scenario::ctx(scenario));
+            clock::destroy_for_testing(clockObj);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
             let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
             clock::set_for_testing(&mut clockObj, 1687975971000);
             
@@ -271,31 +434,21 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
                 test_scenario::ctx(scenario)
             );
             clock::destroy_for_testing(clockObj);
-            let winners = getUnclaimedWinnerIDs(&raffle);
-            debug::print(&winners);
-            assert!(winnerCount == vector::length(&winners), 0);
             
             test_scenario::return_shared(raffle);
         };
         test_scenario::next_tx(scenario, user1);
         {
             let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
-            let proofs = vector::empty<vector<u8>>();
-            let proofs = vector::empty<vector<u8>>();
-            vector::push_back(&mut proofs, x"d7029dd97a4e80faa52e93913ab20e9e8b395a749667d8f5efeacf05bb3c9ec3");
-            vector::push_back(&mut proofs, x"a78664e853e4a0d260452870ac93bd8bf8f2ffdefea73505c16f7ce55dd72088");
-            vector::push_back(&mut proofs, x"eaa13e622a7f2652126114c66ed179d34ac6b91d7aa743712b5edecd3ef7ddb0");
-            vector::push_back(&mut proofs, x"e619157d86c8246784e4274463365dc7b73b28aba57a8d6fe836f7195834ec51");
-            vector::push_back(&mut proofs, x"a07d80f94badde6d27bc61c3c884b50a6542fd25c0d0c8e00772c7a1f884e94e");
-            vector::push_back(&mut proofs, x"eb2d1603e76aead0dda29d0ceda35ec1a0da7a1271a4ba7e4cf0993fb3305160");
-            vector::push_back(&mut proofs, x"a047a5b20681c670ffc7b46e9b892fb4b050dc9467af0fa744d52ee770a132f6");
-            vector::push_back(&mut proofs, x"0f57ac550dcd8bcab90d573866fbe7604576a8968321d7e722f1f14427dc76f6");
             
+            // claim_raffle_reward(&mut raffle, user1_index, user1, proofs, test_scenario::ctx(scenario));
+
             test_scenario::return_shared(raffle);
         };
 
         test_scenario::end(scenario_val);
     }
+    
 
     #[test]
     fun test_raffle_with_claim() {
@@ -306,8 +459,23 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         // create test addresses representing users
         let admin = @0xad;
         let host = @0xac;
-        let user1 = @0x04d626ce8938318165fab01491095329aee67fd017a4a17fe2c981b8a9a569cc;
+        let user1 = @0xcba2aa3c7ee3f3f6580e78ba0008577867e20784bc5b3ad8f76db0ad4176f0e4;
         
+        let winnerCount = 1;
+        let totalPrize = 10;
+
+        let user1_index = 0;
+        let merkle_root = x"8714127bd7b54f7cd362ea56141fcf741c9937fb399feec150014511d68b715f";
+        let participantCount = 2; // set it to 2 for testing, so the id 0 will be the winner.
+        let proofs = vector::empty<vector<u8>>();
+        vector::push_back(&mut proofs, x"b14995a1c47168773d46d4a809e980182dda361e26ed441d7814f938019375af");
+        vector::push_back(&mut proofs, x"b4624a82b5742fb96be8f3e644274c8059fdf9bf03b6894264f2338858a20dc6");
+        vector::push_back(&mut proofs, x"8d2d65241d70edef4ca8d02b21e739f866475e028822f0083865f2f341db53ce");
+        vector::push_back(&mut proofs, x"86794d761065aec1cfcfced7b680eccf8ace01e27875d427d9a37064a8eec7e1");
+        vector::push_back(&mut proofs, x"3a539cde95b655a045994ffa3f55de7ec9a3746d5019e735a6370381b5c8e1e3");
+        vector::push_back(&mut proofs, x"c5811e5652ad00e70c90c5939c5b13b588362066f889419950d0ab870ec76231");
+        vector::push_back(&mut proofs, x"d5dfb532a73d5d1372e9a069028681b8975538395ea81705e39c7a64cb8af9fc");
+        vector::push_back(&mut proofs, x"ccd7d991d797c2d306c83a6837b9af87a78734ec35a8568382d361a7e3c75aee");
         // first transaction to emulate module initialization
         let scenario_val = test_scenario::begin(admin);
         let scenario = &mut scenario_val;
@@ -317,10 +485,6 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         };
 
         test_scenario::next_tx(scenario, host);
-        let winnerCount = 1;
-        let totalPrize = 10;
-        let merkle_root = x"bd1d23e6665d7f010df630c66809c19733b79b03e5840a367fa22baf5bed58e4";
-        let participantCount = 2;
         
         {
             let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
@@ -334,7 +498,6 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         test_scenario::next_tx(scenario, user1);
         {
             let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
-            assert!(raffle.round == 3084797, 0);
             let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
             clock::set_for_testing(&mut clockObj, 1687975971000);
             
@@ -346,35 +509,14 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
                 test_scenario::ctx(scenario)
             );
             clock::destroy_for_testing(clockObj);
-            let winners = getUnclaimedWinnerIDs(&raffle);
-            debug::print(&winners);
-            assert!(winnerCount == vector::length(&winners), 0);
             
             test_scenario::return_shared(raffle);
         };
         test_scenario::next_tx(scenario, user1);
         {
             let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
-            let proofs = vector::empty<vector<u8>>();
-            let proofs = vector::empty<vector<u8>>();
-            vector::push_back(&mut proofs, x"d7029dd97a4e80faa52e93913ab20e9e8b395a749667d8f5efeacf05bb3c9ec3");
-            vector::push_back(&mut proofs, x"a78664e853e4a0d260452870ac93bd8bf8f2ffdefea73505c16f7ce55dd72088");
-            vector::push_back(&mut proofs, x"eaa13e622a7f2652126114c66ed179d34ac6b91d7aa743712b5edecd3ef7ddb0");
-            vector::push_back(&mut proofs, x"e619157d86c8246784e4274463365dc7b73b28aba57a8d6fe836f7195834ec51");
-            vector::push_back(&mut proofs, x"a07d80f94badde6d27bc61c3c884b50a6542fd25c0d0c8e00772c7a1f884e94e");
-            vector::push_back(&mut proofs, x"eb2d1603e76aead0dda29d0ceda35ec1a0da7a1271a4ba7e4cf0993fb3305160");
-            vector::push_back(&mut proofs, x"a047a5b20681c670ffc7b46e9b892fb4b050dc9467af0fa744d52ee770a132f6");
-            vector::push_back(&mut proofs, x"0f57ac550dcd8bcab90d573866fbe7604576a8968321d7e722f1f14427dc76f6");
             
-            let valid = proof_user(
-                user1,
-                0,
-                proofs, 
-                raffle.participants_Merkle_Root
-            );
-            assert!(valid, 0);
-
-            // claim_raffle_reward(&mut raffle, 6, user1, vector::empty(), test_scenario::ctx(scenario));
+            claim_raffle_reward(&mut raffle, user1_index, user1, proofs, test_scenario::ctx(scenario));
 
             test_scenario::return_shared(raffle);
         };

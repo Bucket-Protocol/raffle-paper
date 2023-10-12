@@ -12,7 +12,7 @@ module raffle::addresses_hash_proof {
     use sui::object_table::{Self, ObjectTable};
     use std::bcs;
     use std::hash::{Self};
-    // use std::debug;
+    use std::debug;
 
     // public fun hash_addresses(addresses: vector<address>): vector<u8> {
     //     let all_bytes = vector::empty<u8>();
@@ -36,6 +36,7 @@ module raffle::addresses_hash_proof {
             bcs::to_bytes(&index), 
             bcs::to_bytes(&participant)
         );
+        debug::print(&leaf);
         return verify(leaf, proofs, root)
     }
     fun process_proof(leaf: vector<u8>, proofs: vector<vector<u8>>): vector<u8> {
