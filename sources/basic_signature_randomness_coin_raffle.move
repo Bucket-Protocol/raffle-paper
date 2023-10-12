@@ -1,5 +1,6 @@
 module raffle::signature_randomness_coin_raffle {
     use sui::clock::{Self, Clock};
+    use std::debug;
     use raffle::drand_lib::{derive_randomness, verify_drand_signature, safe_selection, get_current_round_by_time};
     use sui::balance::{Self, Balance};
     use sui::coin::{Self, Coin};
@@ -7,6 +8,7 @@ module raffle::signature_randomness_coin_raffle {
     use std::ascii::String as ASCIIString;
     use sui::bls12381::bls12381_min_pk_verify;
     use sui::hash::blake2b256;
+    use std::hash::{Self};
     use sui::event;
     use std::bcs;
     use std::type_name;
@@ -21,7 +23,7 @@ module raffle::signature_randomness_coin_raffle {
     struct CoinRaffleCreated has copy, drop {
         raffle_id: ID,
         raffle_name: String,
-        user_seed: u64,
+        user_seed: vector<u8>,
         time: u64,
         creator: address,
         prizeAmount: u64,
@@ -62,7 +64,7 @@ module raffle::signature_randomness_coin_raffle {
     struct Raffle <phantom T> has key, store {
         id: UID,
         name: String,
-        user_seed: u64,
+        user_seed: vector<u8>,
         time: u64,
         host_pub_key: vector<u8>,
         status: u8,
@@ -84,7 +86,7 @@ module raffle::signature_randomness_coin_raffle {
 
     public entry fun create_coin_raffle<T>(
         name: vector<u8>, 
-        user_seed: u64,
+        user_seed: vector<u8>,
         clock: &Clock,
         host_pub_key: vector<u8>,
         participants: vector<address>, 
@@ -98,7 +100,7 @@ module raffle::signature_randomness_coin_raffle {
 
     fun internal_create_coin_raffle<T>(
         name: vector<u8>, 
-        user_seed: u64,
+        user_seed: vector<u8>,
         clock: &Clock,
         host_pub_key: vector<u8>,
         participants: vector<address>, 
@@ -143,53 +145,60 @@ module raffle::signature_randomness_coin_raffle {
             EInvalidBlsSig
         );
     }
+
+    fun efficient_hash(a: vector<u8>, b: vector<u8>): vector<u8> {
+        vector::append(&mut a, b);
+        return hash::sha3_256(a)
+    }
     
-    // public entry fun settle_coin_raffle<T>(
-    //     raffle: &mut Raffle<T>,
-    //     bls_sig: vector<u8>,
-    //     ctx: &mut TxContext
-    // ){
-    //     let msg_vec = bcs::to_bytes(&raffle.user_seed);
-    //     vector::append(&mut msg_vec, bcs::to_bytes(&raffle.time));
-    //     let public_key = raffle.host_pub_key;
-    //     assert!(
-    //         bls12381_min_pk_verify(
-    //             &bls_sig, &public_key, &msg_vec,
-    //         ),
-    //         EInvalidBlsSig
-    //     );
+    public entry fun settle_coin_raffle<T>(
+        raffle: &mut Raffle<T>,
+        bls_sig: vector<u8>,
+        ctx: &mut TxContext
+    ){
+        let message = vector::empty<u8>();
+        vector::append(&mut message, raffle.user_seed);
+        vector::append(&mut message, bcs::to_bytes(&raffle.time));
 
-        // raffle.status = COMPLETED;
-        // raffle.settler = tx_context::sender(ctx);
-        // // // The randomness is derived from drand_sig by passing it through sha2_256 to make it uniform.
-        // // let digest = derive_randomness(drand_sig);
-        // // let random_number = 0;
-        // // let i = 0;
+        let public_key = raffle.host_pub_key;
+        assert!(
+            bls12381_min_pk_verify(
+                &bls_sig, &public_key, &message,
+            ),
+            EInvalidBlsSig
+        );
+        let digest = derive_randomness(bls_sig);
+        let random_number = 0;
+        let i = 0;
 
-        // let participants = raffle.participants;
+        raffle.status = COMPLETED;
+        raffle.settler = tx_context::sender(ctx);
+        // // The randomness is derived from drand_sig by passing it through sha2_256 to make it uniform.
+        
+        let participants = raffle.participants;
 
-        // let award_per_winner = balance::value(&raffle.balance) / raffle.winnerCount;
+        let award_per_winner = balance::value(&raffle.balance) / raffle.winnerCount;
 
-        // loop{
-        //     i = i+1;
-        //     let length = vector::length(&participants);
-        //     let random_number = safe_selection(length, &digest, random_number);
-        //     let winner = vector::swap_remove(&mut participants, random_number);
-        //     vector::push_back<address>(
-        //         &mut raffle.winners, 
-        //         winner,
-        //     );
-        //     if (i < raffle.winnerCount) {
-        //         transfer::public_transfer(coin::take(&mut raffle.balance, award_per_winner, ctx), winner);
-        //     } else {
-        //         let remain_balance = balance::value(&raffle.balance);
-        //         transfer::public_transfer(coin::take( &mut raffle.balance, remain_balance, ctx), winner);
-        //         break
-        //     }
-        // };
-        // raffle.participants = vector::empty();
-        // // emit_coin_raffle_settled(raffle);
-    // }
+        loop{
+            i = i+1;
+            let length = vector::length(&participants);
+            let random_number = safe_selection(length, &digest, random_number);
+            let winner = vector::swap_remove(&mut participants, random_number);
+            vector::push_back<address>(
+                &mut raffle.winners, 
+                winner,
+            );
+            if (i < raffle.winnerCount) {
+                transfer::public_transfer(coin::take(&mut raffle.balance, award_per_winner, ctx), winner);
+            } else {
+                let remain_balance = balance::value(&raffle.balance);
+                transfer::public_transfer(coin::take( &mut raffle.balance, remain_balance, ctx), winner);
+                break
+            }
+        };
+        raffle.participants = vector::empty();
+        // emit_coin_raffle_settled(raffle);
+    }
 
     fun getWinners<T>(raffle: &Raffle<T>):vector<address> {
         raffle.winners
@@ -199,6 +208,40 @@ module raffle::signature_randomness_coin_raffle {
     }
 
 
+    #[test]
+    fun test_verify_signautre() {
+        use raffle::test_coin::{Self, TEST_COIN};
+        use sui::test_scenario;
+        use sui::balance;
+        use std::debug;
+        // create test addresses representing users
+        let admin = @0xad;
+        
+        
+        // SHA3_256("RANDOM")
+        let message = x"4022354678f2ab042bd4d3f583c9fee7391826c55d9c8d9f95d09a4f1ae07762";
+        let time: u64 = 1687975971000;
+        
+        vector::append(&mut message, bcs::to_bytes(&time));
+
+
+        let bls_sig = x"acd9b79159208183f8ac2915896eb51257878a47869c47057e3bd9d37a5db646facf68cabec024d8991106f06d54cf4316cfc1f4c812ffeaaa04642f912e315e36ac12c0c36ef2228ace467de80ad4a00625204ac480843b37be45b3f01a3f5a";
+        
+        let public_key = x"a7e75af9dd4d868a41ad2f5a5b021d653e31084261724fb40ae2f1b1c31c778d3b9464502d599cf6720723ec5c68b59d";
+
+        // first transaction to emulate module initialization
+        let scenario_val = test_scenario::begin(admin);
+        let scenario = &mut scenario_val;
+        {
+            verify_sig(
+                bls_sig,
+                message,
+                public_key,
+                test_scenario::ctx(scenario)
+            )
+        };
+        test_scenario::end(scenario_val);
+    }
     #[test]
     fun test_raffle() {
         use raffle::test_coin::{Self, TEST_COIN};
@@ -225,17 +268,120 @@ module raffle::signature_randomness_coin_raffle {
         };
 
         test_scenario::next_tx(scenario, host);
-        let bls_sig = x"a3a599fd887de55eef7b3f90d01784a84f777076c02aff2c29036293e0eee3822a230b6274cc66d734bdfeda3e83a01c0360c3e391892f9de37b630a02435be8f7d4b13a711f86b3f1ad3ce090899165513f3a6facd2f1348e4911cc758a2cb8";
-        let message = x"7902030405";
-        let public_key = x"a7e75af9dd4d868a41ad2f5a5b021d653e31084261724fb40ae2f1b1c31c778d3b9464502d599cf6720723ec5c68b59d";
+        let winnerCount = 3;
+        let totalPrize = 10;
+        
         {
-            verify_sig(
-                bls_sig,
-                message,
-                public_key,
-                test_scenario::ctx(scenario)
-            )
+            let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
+            let participants = vector::empty<address>();
+            vector::push_back(&mut participants, user1);
+            vector::push_back(&mut participants, user2);
+            vector::push_back(&mut participants, user3);
+            vector::push_back(&mut participants, user4);
+            vector::push_back(&mut participants, user5);
+            vector::push_back(&mut participants, user6);
+            vector::push_back(&mut participants, user7);
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            
+            clock::set_for_testing(&mut clockObj, 1687975971000);
+            let user_seed = x"4022354678f2ab042bd4d3f583c9fee7391826c55d9c8d9f95d09a4f1ae07762";
+            let host_pub_key = x"a7e75af9dd4d868a41ad2f5a5b021d653e31084261724fb40ae2f1b1c31c778d3b9464502d599cf6720723ec5c68b59d";
+            create_coin_raffle(b"TEST", user_seed, &clockObj, host_pub_key, participants, winnerCount, coin, test_scenario::ctx(scenario));
+            clock::destroy_for_testing(clockObj);
         };
+        test_scenario::next_tx(scenario, user1);
+        {
+            let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            
+            let signature = x"acd9b79159208183f8ac2915896eb51257878a47869c47057e3bd9d37a5db646facf68cabec024d8991106f06d54cf4316cfc1f4c812ffeaaa04642f912e315e36ac12c0c36ef2228ace467de80ad4a00625204ac480843b37be45b3f01a3f5a";
+            settle_coin_raffle(
+                &mut raffle, 
+                signature,
+                test_scenario::ctx(scenario)
+            );
+            
+            let winners = getWinners(&raffle);
+            
+            // assert!(winnerCount == vector::length(&winners), 0);
+            
+            test_scenario::return_shared(raffle);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            assert!(totalPrize / winnerCount == 3, 0);
+            let coin1 = test_scenario::take_from_address<Coin<TEST_COIN>>(scenario, user7);
+            assert!(balance::value(coin::balance(&coin1)) == totalPrize / winnerCount, 0);
+            test_scenario::return_to_address(user7, coin1);
+            let coin2 = test_scenario::take_from_address<Coin<TEST_COIN>>(scenario, user3);
+            assert!(balance::value(coin::balance(&coin2)) == totalPrize / winnerCount, 0);
+            // debug::print(&balance::value(coin::balance(&coin2)));
+            test_scenario::return_to_address(user3, coin2);
+            let coin3 = test_scenario::take_from_address<Coin<TEST_COIN>>(scenario, user6);
+            assert!(balance::value(coin::balance(&coin3)) == totalPrize - (totalPrize / winnerCount)*(winnerCount - 1), 0);
+            test_scenario::return_to_address(user6, coin3);
+        };
+        
+        test_scenario::end(scenario_val);
+    }
+
+    #[test]
+    fun raffle_10_winner_from_200_participant() {
+        use raffle::test_coin::{Self, TEST_COIN};
+        use sui::test_scenario;
+        use sui::balance;
+        use std::debug;
+        // create test addresses representing users
+        let admin = @0xad;
+        let host = @0xac;
+        let user1 = @0xCAF1;
+        
+        // first transaction to emulate module initialization
+        let scenario_val = test_scenario::begin(admin);
+        let scenario = &mut scenario_val;
+        {
+            init(test_scenario::ctx(scenario));
+            // test_coin::init(test_utils::create_one_time_witness<TEST>(), test_scenario::ctx(scenario))
+        };
+
+        test_scenario::next_tx(scenario, host);
+        let p = 200;
+        let winnerCount = 10;
+        let totalPrize = 10;
+        let coin = coin::from_balance(balance::create_for_testing<TEST_COIN>(totalPrize), test_scenario::ctx(scenario));
+        let participants = vector::empty<address>();
+        let i = 0;
+        loop {
+            if (i == p) {
+                break
+            };
+            i = i+1;
+            vector::push_back(&mut participants, user1);
+        };
+        test_scenario::next_tx(scenario, host);
+        {
+            let clockObj = clock::create_for_testing(test_scenario::ctx(scenario));
+            clock::set_for_testing(&mut clockObj, 1687975971000);
+            let user_seed = x"4022354678f2ab042bd4d3f583c9fee7391826c55d9c8d9f95d09a4f1ae07762";
+            let host_pub_key = x"a7e75af9dd4d868a41ad2f5a5b021d653e31084261724fb40ae2f1b1c31c778d3b9464502d599cf6720723ec5c68b59d";
+            create_coin_raffle(b"TEST", user_seed, &clockObj, host_pub_key, participants, winnerCount, coin, test_scenario::ctx(scenario));
+            clock::destroy_for_testing(clockObj);
+        };
+        test_scenario::next_tx(scenario, user1);
+        {
+            let raffle = test_scenario::take_shared<Raffle<TEST_COIN>>(scenario);
+            
+            let signature = x"acd9b79159208183f8ac2915896eb51257878a47869c47057e3bd9d37a5db646facf68cabec024d8991106f06d54cf4316cfc1f4c812ffeaaa04642f912e315e36ac12c0c36ef2228ace467de80ad4a00625204ac480843b37be45b3f01a3f5a";
+            settle_coin_raffle(
+                &mut raffle, 
+                signature,
+                test_scenario::ctx(scenario)
+            );
+            
+            let winners = getWinners(&raffle);
+            
+            test_scenario::return_shared(raffle);
+        };
+        
         test_scenario::end(scenario_val);
     }
     
