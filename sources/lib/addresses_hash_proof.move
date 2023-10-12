@@ -5,8 +5,7 @@
 /// new objects
 module raffle::addresses_hash_proof {
     friend raffle::drand_raffle_with_zero_knowledge_proof;
-    friend raffle::raffle;
-    friend raffle::addresses_obj;
+    
     use sui::object::{Self, ID, UID};
     use std::vector;
     use sui::tx_context::{Self, TxContext};

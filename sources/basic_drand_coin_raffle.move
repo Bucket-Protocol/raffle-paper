@@ -1,4 +1,4 @@
-module raffle::raffle {
+module raffle::basic_drand_coin_raffle {
     use sui::clock::{Self, Clock};
     use raffle::drand_lib::{derive_randomness, verify_drand_signature, safe_selection, get_current_round_by_time};
     use sui::balance::{Self, Balance};

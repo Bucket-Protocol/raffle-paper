@@ -19,7 +19,7 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
     use raffle::addresses_obj::{Self, AddressesObj};
     use raffle::addresses_sub_obj::{Self, AddressesSubObj};
     use sui::object_table::{Self, ObjectTable};
-    use raffle::addresses_hash_proof::{Self, proof_user, verify};
+    use raffle::addresses_hash_proof::{Self, proof_user};
     use sui::vec_map::{Self, VecMap};
     use std::debug;
     const CLAIMED: u64 = 2;
