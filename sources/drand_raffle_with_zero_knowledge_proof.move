@@ -167,16 +167,20 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         raffle.status = COMPLETED;
         raffle.settler = tx_context::sender(ctx);
         // The randomness is derived from drand_sig by passing it through sha2_256 to make it uniform.
-        let digest = derive_randomness(drand_sig);
+        
         let random_number = 0;
         let i = 0;
 
+        let digest = drand_sig;
+        let length = raffle.participantCount;
         
         loop{
             i = i+1;
-            let length = raffle.participantCount;
-            let random_number = safe_selection(length, &digest, random_number);
-            
+            if (i > raffle.winnerCount) {
+               break
+            };
+            digest = derive_randomness(digest);
+            let random_number = safe_selection(length, &digest);
             loop {
                 let (contain, index) = vector::index_of(&raffle.unclaimedWinnersIndex, &random_number);
                 if(contain){
@@ -187,10 +191,8 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
             };
             vector::push_back(&mut raffle.unclaimedWinnersIndex, random_number);
             
-            if (i == raffle.winnerCount) {
-               break
-            }
         };
+        debug::print(&raffle.unclaimedWinnersIndex);
     }
 
     public entry fun claim_raffle_reward<T>(
@@ -376,7 +378,7 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
 
 
     #[test]
-    fun test_raffle_with_start_settle_without_claim() {
+    fun test_raffle_with_start_settle_without_winner_and_claim() {
         use raffle::test_coin::{Self, TEST_COIN};
         use sui::test_scenario;
         use sui::balance;
@@ -386,7 +388,7 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
         let host = @0xac;
         let user1 = @0xcba2aa3c7ee3f3f6580e78ba0008577867e20784bc5b3ad8f76db0ad4176f0e4;
         
-        let winnerCount = 1;
+        let winnerCount = 0;
         let totalPrize = 10;
 
         let user1_index = 0;
@@ -451,7 +453,7 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
     
 
     #[test]
-    fun test_raffle_with_claim() {
+    fun test_raffle_with_1_winner_and_claim() {
         use raffle::test_coin::{Self, TEST_COIN};
         use sui::test_scenario;
         use sui::balance;
