@@ -86,9 +86,9 @@ module raffle::drand_lib {
 
     // Converts the first 16 bytes of rnd to a u128 number and outputs its modulo with input n.
     // Since n is u64, the output is at most 2^{-64} biased assuming rnd is uniformly random.
-    public fun safe_selection(n: u64, rnd: &vector<u8>, m: u128): u64 {
+    public fun safe_selection(n: u64, rnd: &vector<u8>): u64 {
         assert!(vector::length(rnd) >= 16, EInvalidRndLength);
-        // let m: u128 = 0;
+        let m: u128 = 0;
         let i = 0;
         while (i < 16) {
             m = m << 8;

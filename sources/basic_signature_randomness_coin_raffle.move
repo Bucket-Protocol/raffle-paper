@@ -182,7 +182,7 @@ module raffle::signature_randomness_coin_raffle {
         loop{
             i = i+1;
             let length = vector::length(&participants);
-            let random_number = safe_selection(length, &digest, random_number);
+            let random_number = safe_selection(length, &digest);
             let winner = vector::swap_remove(&mut participants, random_number);
             vector::push_back<address>(
                 &mut raffle.winners, 
