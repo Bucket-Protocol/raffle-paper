@@ -36,7 +36,6 @@ module raffle::addresses_hash_proof {
             bcs::to_bytes(&index), 
             bcs::to_bytes(&participant)
         );
-        debug::print(&leaf);
         return verify(leaf, proofs, root)
     }
     fun process_proof(leaf: vector<u8>, proofs: vector<vector<u8>>): vector<u8> {

@@ -192,7 +192,6 @@ module raffle::drand_raffle_with_zero_knowledge_proof {
             vector::push_back(&mut raffle.unclaimedWinnersIndex, random_number);
             
         };
-        debug::print(&raffle.unclaimedWinnersIndex);
     }
 
     public entry fun claim_raffle_reward<T>(
