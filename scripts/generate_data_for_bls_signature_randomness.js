@@ -11,6 +11,7 @@ function numToHex(num) {
 
 (async () => {
   // keys, messages & other inputs can be Uint8Arrays or hex strings
+  // This is a testing private key. Be sure to replace it with your own in production!
   let privateKey =
     '67d53f170b908cabb9eb326c3c337762d59289a8fec79f7bc9254b584b73265c';
   let user_seed = await sha3_256('RANDOM');
